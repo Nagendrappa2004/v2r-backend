@@ -7,8 +7,13 @@ const fs = require("fs");
 
 const app = express();
 
+/* ===============================
+   CREATE UPLOAD FOLDER
+================================ */
 const uploadsDir = path.join(__dirname, "uploads", "reviews");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 /* ===============================
    MIDDLEWARE (MUST BE FIRST)
@@ -19,9 +24,11 @@ app.use(express.json());
 /* ===============================
    DATABASE CONNECTION
 ================================ */
-mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/homeStore")
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log(err));
+mongoose.connect(
+  process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/homeStore"
+)
+.then(() => console.log("MongoDB connected"))
+.catch(err => console.log(err));
 
 /* ===============================
    MODELS
@@ -33,7 +40,7 @@ const { authAdmin } = require("./middleware/auth");
    ROUTES
 ================================ */
 
-/* AUTH ROUTES (VERY IMPORTANT: BEFORE listen) */
+/* AUTH ROUTES */
 const authRoutes = require("./routes/authRoutes");
 app.use("/auth", authRoutes);
 
@@ -65,7 +72,11 @@ app.use("/reviews", reviewRoutes);
 const uploadRoutes = require("./routes/uploadRoutes");
 app.use("/upload", uploadRoutes);
 
-/* UPLOADED FILES */
+/* CONTACT ROUTES */
+const contactRoutes = require("./routes/contactRoutes");
+app.use("/contact", contactRoutes);
+
+/* UPLOADED FILES STATIC */
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* PRODUCT ROUTES */
@@ -89,13 +100,20 @@ app.put("/update-product/:id", authAdmin, async (req, res) => {
 });
 
 app.put("/update-stock/:id", authAdmin, async (req, res) => {
-  await Product.findByIdAndUpdate(req.params.id, { stock: Number(req.body.stock) });
+  await Product.findByIdAndUpdate(req.params.id, {
+    stock: Number(req.body.stock)
+  });
   res.send("Stock Updated");
 });
 
 app.delete("/delete-product/:id", authAdmin, async (req, res) => {
   await Product.findByIdAndDelete(req.params.id);
   res.send("Deleted");
+});
+
+/* ROOT TEST ROUTE */
+app.get("/", (req, res) => {
+  res.send("V2R Backend is running 🚀");
 });
 
 /* ===============================
@@ -106,14 +124,8 @@ app.use(express.static("../frontend"));
 /* ===============================
    START SERVER (MUST BE LAST)
 ================================ */
-app.listen(process.env.PORT || 5000, () => {
-  console.log("Server running on port", process.env.PORT || 5000);
-});
+const PORT = process.env.PORT || 5000;
 
-
-const contactRoutes=require("./routes/contactRoutes");
-app.use("/contact",contactRoutes);
-
-app.get("/", (req, res) => {
-  res.send("V2R Backend is running 🚀");
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
 });
