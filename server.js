@@ -113,3 +113,7 @@ app.listen(process.env.PORT || 5000, () => {
 
 const contactRoutes=require("./routes/contactRoutes");
 app.use("/contact",contactRoutes);
+
+app.get("/", (req, res) => {
+  res.send("V2R Backend is running 🚀");
+});
