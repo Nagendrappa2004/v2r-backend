@@ -18,10 +18,15 @@ const productSchema = new mongoose.Schema({
     default:0
   },
 
-  /* Quantity/weight options – prices from Google Sheet (columns: 250g, 500g, 1kg) */
+  /* Product availability (sheet-driven) */
+  upcoming: {
+    type: Boolean,
+    default: false
+  },
+
+  /* Quantity/weight options – prices from Google Sheet (columns: 300g, 1kg) */
   priceByWeight: {
-    "250g": { type: Number, default: 99 },
-    "500g": { type: Number, default: 179 },
+    "300g": { type: Number, default: 99 },
     "1kg": { type: Number, default: 329 }
   },
 

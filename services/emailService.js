@@ -1,17 +1,26 @@
 const nodemailer = require("nodemailer");
 
+function normalizeSecret(v) {
+  return (v || "").toString().trim().replace(/\s+/g, "");
+}
+
+const GMAIL_USER_FINAL = normalizeSecret(process.env.GMAIL_USER || process.env.EMAIL_USER);
+const GMAIL_APP_PASSWORD_FINAL = normalizeSecret(
+  process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS
+);
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD
+    user: GMAIL_USER_FINAL,
+    pass: GMAIL_APP_PASSWORD_FINAL
   }
 });
 
-const FROM = `v2r Heritages <${process.env.GMAIL_USER || "noreply@v2r.com"}>`;
+const FROM = `v2r Heritages <${GMAIL_USER_FINAL || "noreply@v2r.com"}>`;
 
 async function sendOrderConfirmation(to, order) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!GMAIL_USER_FINAL || !GMAIL_APP_PASSWORD_FINAL) {
     console.warn("Email not configured. Skipping order confirmation.");
     return;
   }
@@ -38,8 +47,8 @@ async function sendOrderConfirmation(to, order) {
 }
 
 async function sendOtpEmail(to, otp) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-    throw new Error("Email not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD.");
+  if (!GMAIL_USER_FINAL || !GMAIL_APP_PASSWORD_FINAL) {
+    throw new Error("Email not configured. Set GMAIL_USER/GMAIL_APP_PASSWORD (or EMAIL_USER/EMAIL_PASS).");
   }
   await transporter.sendMail({
     from: FROM,

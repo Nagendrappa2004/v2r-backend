@@ -26,17 +26,25 @@ router.get("/sync", async (req, res) => {
 
     for (let row of rows) {
 
-  const existingProduct = await Product.findOne({
-    name: row.name
-  });
+  const existingProduct = await Product.findOne({ name: row.name });
 
-  const price250 = row["250g"] != null ? Number(row["250g"]) : undefined;
-  const price500 = row["500g"] != null ? Number(row["500g"]) : undefined;
+  const price300 = row["300g"] != null ? Number(row["300g"]) : undefined;
   const price1k = row["1kg"] != null ? Number(row["1kg"]) : undefined;
   const priceByWeight = {};
-  if (price250 != null) priceByWeight["250g"] = price250;
-  if (price500 != null) priceByWeight["500g"] = price500;
+  if (price300 != null) priceByWeight["300g"] = price300;
   if (price1k != null) priceByWeight["1kg"] = price1k;
+
+  // Upcoming flag (sheet-driven)
+  // Supported columns: `upcoming` OR `status`
+  const upcomingRaw = row["upcoming"] != null ? row["upcoming"] : (row["status"] != null ? row["status"] : row["Status"]);
+  const upcomingStr = upcomingRaw != null ? String(upcomingRaw).trim().toLowerCase() : "";
+  // If status includes "upcoming" => upcoming, else false
+  let isUpcoming = false;
+  if (upcomingStr) {
+    if (upcomingStr === "true" || upcomingStr === "1" || upcomingStr === "yes" || upcomingStr === "upcoming") isUpcoming = true;
+    if (upcomingStr.includes("upcoming")) isUpcoming = true;
+    if (upcomingStr === "false" || upcomingStr === "0" || upcomingStr === "no" || upcomingStr === "live") isUpcoming = false;
+  }
 
   if(existingProduct){
 
@@ -47,6 +55,7 @@ router.get("/sync", async (req, res) => {
       image: row.image,
       description: row.description
     };
+    update.upcoming = isUpcoming;
     if (Object.keys(priceByWeight).length) update.priceByWeight = priceByWeight;
     await Product.findByIdAndUpdate(existingProduct._id, update);
 
@@ -59,6 +68,7 @@ router.get("/sync", async (req, res) => {
       category: row.category,
       image: row.image,
       description: row.description,
+      upcoming: isUpcoming,
       priceByWeight: Object.keys(priceByWeight).length ? priceByWeight : undefined
     });
 

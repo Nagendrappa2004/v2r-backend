@@ -6,6 +6,7 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
+app.set("trust proxy", 1);
 
 /* ===============================
    CREATE UPLOAD FOLDER
@@ -34,6 +35,7 @@ mongoose.connect(
    MODELS
 ================================ */
 const Product = require("./models/product");
+const Order = require("./models/Order");
 const { authAdmin } = require("./middleware/auth");
 
 /* ===============================
@@ -83,6 +85,61 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.get("/products", async (req, res) => {
   const products = await Product.find();
   res.json(products);
+});
+
+/* PUBLIC: Top selling among LIVE products (excludes cancelled orders & upcoming SKUs) */
+app.get("/public/top-selling", async (req, res) => {
+  try {
+    const data = await Order.aggregate([
+      { $match: { status: { $ne: "Cancelled" } } },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$items.id", null] },
+                  { $ne: ["$items.id", ""] }
+                ]
+              },
+              { $toString: "$items.id" },
+              { $ifNull: ["$items.name", "unknown"] }
+            ]
+          },
+          totalQty: { $sum: { $ifNull: ["$items.quantity", 1] } },
+          name: { $first: "$items.name" }
+        }
+      },
+      { $sort: { totalQty: -1 } },
+      { $limit: 12 }
+    ]);
+
+    for (const row of data) {
+      const rawId = row && row._id;
+      const productId =
+        rawId && /^[a-f0-9]{24}$/i.test(String(rawId)) ? String(rawId) : "";
+      const name = row?.name || (productId ? "" : String(rawId || ""));
+      let upcoming = false;
+      if (productId) {
+        const p = await Product.findById(productId).select("upcoming");
+        upcoming = !!(p && p.upcoming);
+      } else if (name) {
+        const p = await Product.findOne({ name }).select("upcoming");
+        upcoming = !!(p && p.upcoming);
+      }
+      if (!upcoming && (productId || name)) {
+        return res.json({
+          productId,
+          name,
+          qty: row.totalQty || 0
+        });
+      }
+    }
+    res.json({ productId: "", name: "", qty: 0 });
+  } catch (err) {
+    res.json({ productId: "", name: "", qty: 0 });
+  }
 });
 
 app.post("/add-product", authAdmin, async (req, res) => {

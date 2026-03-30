@@ -26,7 +26,9 @@ const upload = multer({
 
 router.post("/review-image", authUser, upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  const url = `${req.protocol}://${req.get("host")}/uploads/reviews/${req.file.filename}`;
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "https").toString().split(",")[0].trim();
+  const host = req.get("host");
+  const url = `${proto}://${host}/uploads/reviews/${req.file.filename}`;
   res.json({ url });
 });
 

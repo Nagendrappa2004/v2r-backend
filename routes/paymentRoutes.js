@@ -6,6 +6,7 @@ const Product = require("../models/product");
 const Order = require("../models/Order");
 const { authUser } = require("../middleware/auth");
 const { sendOrderConfirmation } = require("../services/emailService");
+const { sendOrderWhatsAppNotifications } = require("../services/whatsappService");
 
 let razorpay = null;
 
@@ -112,6 +113,14 @@ router.post("/verify", authUser, async (req, res) => {
       await sendOrderConfirmation(email || req.user.email, newOrder);
     } catch (e) {
       console.warn("Order email failed:", e.message);
+    }
+
+    // Meta WhatsApp automated notifications (optional; only works if env is configured)
+    try {
+      const metaRes = await sendOrderWhatsAppNotifications(newOrder);
+      if (!metaRes.ok) console.warn("WhatsApp (Meta) not sent:", metaRes.reason || "unknown");
+    } catch (e) {
+      console.warn("WhatsApp (Meta) failed:", e.message);
     }
 
     res.status(201).json({ message: "Order placed", order: newOrder });
