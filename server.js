@@ -53,8 +53,13 @@ app.get("/public/top-selling", async (req, res) => {
       { $sort: { qty: -1 } },
       { $limit: 1 }
     ]);
+
     if (data.length) {
-      res.json({ name: data[0]._id, productId: data[0].productId, qty: data[0].qty });
+      res.json({
+        name: data[0]._id,
+        productId: data[0].productId,
+        qty: data[0].qty
+      });
     } else {
       res.json({});
     }
@@ -68,7 +73,10 @@ app.get("/public/settings", async (req, res) => {
   try {
     const StoreSettings = require("./models/StoreSettings");
     let s = await StoreSettings.findOne({ key: "main" });
-    res.json({ discountPercent: s ? (s.discountPercent || 10) : 10 });
+
+    res.json({
+      discountPercent: s ? (s.discountPercent || 10) : 10
+    });
   } catch (err) {
     res.json({ discountPercent: 10 });
   }
@@ -85,6 +93,7 @@ app.get("/payment/config", (req, res) => {
 app.get("/public/notification-config", (req, res) => {
   const { isEmailConfigured } = require("./services/emailService");
   const { isConfigured: whatsappConfigured } = require("./services/whatsappService");
+
   res.json({
     email: isEmailConfigured(),
     whatsapp: whatsappConfigured(),
@@ -108,6 +117,10 @@ app.use("/reviews", reviewRoutes);
 const uploadRoutes = require("./routes/uploadRoutes");
 app.use("/upload", uploadRoutes);
 
+/* CONTACT ROUTES */
+const contactRoutes = require("./routes/contactRoutes");
+app.use("/contact", contactRoutes);
+
 /* UPLOADED FILES */
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -128,11 +141,15 @@ app.put("/update-product/:id", authAdmin, async (req, res) => {
     price: req.body.price,
     stock: req.body.stock
   });
+
   res.send("Updated");
 });
 
 app.put("/update-stock/:id", authAdmin, async (req, res) => {
-  await Product.findByIdAndUpdate(req.params.id, { stock: Number(req.body.stock) });
+  await Product.findByIdAndUpdate(req.params.id, {
+    stock: Number(req.body.stock)
+  });
+
   res.send("Stock Updated");
 });
 
@@ -147,12 +164,15 @@ app.delete("/delete-product/:id", authAdmin, async (req, res) => {
 app.use(express.static("../frontend"));
 
 /* ===============================
+   ROOT ROUTE
+================================ */
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
+/* ===============================
    START SERVER (MUST BE LAST)
 ================================ */
 app.listen(process.env.PORT || 5000, () => {
   console.log("Server running on port", process.env.PORT || 5000);
 });
-
-
-const contactRoutes=require("./routes/contactRoutes");
-app.use("/contact",contactRoutes);
