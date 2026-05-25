@@ -7,6 +7,7 @@ const Order = require("../models/Order");
 const { authUser } = require("../middleware/auth");
 const { notifyOrderPlaced } = require("../services/orderNotificationService");
 const { calcOrderTotals } = require("../utils/delivery");
+const { findProductForOrderItem } = require("../utils/productLookup");
 
 let razorpay = null;
 
@@ -43,10 +44,9 @@ router.post("/create-order", authUser, async (req, res) => {
       });
     }
 
-    const products = await Product.find();
     for (const item of items || []) {
-      const p = products.find(x => x._id.toString() === item.id);
-      if (!p) return res.status(400).json({ error: `Product ${item.name} not found` });
+      const p = await findProductForOrderItem(item);
+      if (!p) return res.status(400).json({ error: `Product ${item.name || "unknown"} not found` });
       const stock = p.stock ?? 0;
       if (stock < (item.quantity || 1)) {
         return res.status(400).json({ error: `Insufficient stock for ${item.name}. Available: ${stock}` });
@@ -55,8 +55,9 @@ router.post("/create-order", authUser, async (req, res) => {
 
     const rzp = getRazorpay();
     if (!rzp) return res.status(503).json({ error: "Payment not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env" });
+    const amountPaise = Math.max(100, Math.round(Number(expectedTotal) * 100));
     const options = {
-      amount: Math.round(expectedTotal * 100),
+      amount: amountPaise,
       currency: "INR",
       receipt: "v2r_" + Date.now()
     };
@@ -64,6 +65,7 @@ router.post("/create-order", authUser, async (req, res) => {
     res.json({
       orderId: order.id,
       amount: order.amount,
+      amountRupees: expectedTotal,
       currency: order.currency,
       key: process.env.RAZORPAY_KEY_ID || ""
     });
@@ -102,14 +104,17 @@ router.post("/verify", authUser, async (req, res) => {
 
     const ProductModel = require("../models/product");
     for (const item of items) {
-      const p = await ProductModel.findById(item.id);
-      if (!p) return res.status(400).json({ error: `Product ${item.name} not found` });
+      const p = await findProductForOrderItem(item);
+      if (!p) {
+        return res.status(400).json({ error: `Product ${item.name || "unknown"} not found. Order not created — contact support with payment id ${razorpay_payment_id}.` });
+      }
       const stock = p.stock ?? 0;
       const qty = item.quantity || 1;
       if (stock < qty) {
-        return res.status(400).json({ error: `Insufficient stock for ${item.name}` });
+        return res.status(400).json({ error: `Insufficient stock for ${item.name}. Available: ${stock}` });
       }
-      await ProductModel.findByIdAndUpdate(item.id, { $inc: { stock: -qty } });
+      item.id = p._id.toString();
+      await ProductModel.findByIdAndUpdate(p._id, { $inc: { stock: -qty } });
     }
 
     const newOrder = new Order({

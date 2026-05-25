@@ -206,21 +206,37 @@ router.post("/addresses", authUser, async (req, res) => {
       extra,
       isDefault
     } = req.body;
-    if (!name || !phone || !address) return res.status(400).json({ message: "Name, phone and address required" });
+    const areaVal = (area || address || "").trim();
+    const districtVal = (district || city || "").trim();
+    if (!name || !phone || !areaVal || !districtVal || !state || !pincode) {
+      return res.status(400).json({
+        message: "Name, phone, area, district, state and pincode are required"
+      });
+    }
+    const formatted = [
+      doorNo && "Door: " + doorNo,
+      building && "Building: " + building,
+      areaVal && "Area: " + areaVal,
+      taluk && "Taluk: " + taluk,
+      districtVal && "District: " + districtVal,
+      state && "State: " + state,
+      pincode && "Pincode: " + pincode,
+      extra
+    ].filter(Boolean).join(", ");
     const user = await User.findById(req.user.id);
     if (!user.addresses) user.addresses = [];
     const newAddr = {
       name,
       phone,
-      address,
-      city: city || "",
+      address: formatted,
+      city: city || districtVal || "",
       state: state || "",
       pincode: pincode || "",
       doorNo: doorNo || "",
       building: building || "",
-      area: area || "",
+      area: areaVal,
       taluk: taluk || "",
-      district: district || "",
+      district: districtVal,
       extra: extra || "",
       isDefault: !!isDefault
     };
@@ -255,16 +271,26 @@ router.put("/addresses/:index", authUser, async (req, res) => {
     } = req.body;
     if (name != null) user.addresses[i].name = name;
     if (phone != null) user.addresses[i].phone = phone;
-    if (address != null) user.addresses[i].address = address;
-    if (city != null) user.addresses[i].city = city;
-    if (state != null) user.addresses[i].state = state;
-    if (pincode != null) user.addresses[i].pincode = pincode;
     if (doorNo != null) user.addresses[i].doorNo = doorNo;
     if (building != null) user.addresses[i].building = building;
     if (area != null) user.addresses[i].area = area;
     if (taluk != null) user.addresses[i].taluk = taluk;
     if (district != null) user.addresses[i].district = district;
+    if (city != null) user.addresses[i].city = city;
+    if (state != null) user.addresses[i].state = state;
+    if (pincode != null) user.addresses[i].pincode = pincode;
     if (extra != null) user.addresses[i].extra = extra;
+    const a = user.addresses[i];
+    user.addresses[i].address = [
+      a.doorNo && "Door: " + a.doorNo,
+      a.building && "Building: " + a.building,
+      a.area && "Area: " + a.area,
+      a.taluk && "Taluk: " + a.taluk,
+      (a.district || a.city) && "District: " + (a.district || a.city),
+      a.state && "State: " + a.state,
+      a.pincode && "Pincode: " + a.pincode,
+      a.extra
+    ].filter(Boolean).join(", ");
     if (isDefault === true) { user.addresses.forEach(a => { a.isDefault = false; }); user.addresses[i].isDefault = true; }
     await user.save();
     res.json(user.addresses);

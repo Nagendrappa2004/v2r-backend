@@ -26,7 +26,11 @@ function calcDeliveryCharge(subtotal, items) {
 }
 
 function calcSubtotal(items) {
-  return (items || []).reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+  return (items || []).reduce((s, i) => {
+    const price = Number(i.price) || 0;
+    const qty = Number(i.quantity) || 1;
+    return s + price * qty;
+  }, 0);
 }
 
 function calcOrderTotals(items) {
