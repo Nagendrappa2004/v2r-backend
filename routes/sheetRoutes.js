@@ -115,7 +115,7 @@ router.get("/sync", async (req, res) => {
     const packPriceCol =
       allHeaders.find(h => isPackPriceHeader(h)) ||
       allHeaders.find(h => (h || "").toLowerCase().trim() === "packprice");
-    const quantityColumns = allHeaders.filter(h => !headerIsStandard(h));
+    const quantityColumns = allHeaders.filter(h => !headerIsStandard(h) && (h || "").toLowerCase().trim() !== "status");
 
     let synced = 0;
 
