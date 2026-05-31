@@ -1,13 +1,26 @@
 const express = require("express");
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const Product = require("../models/product");
-const { parsePackPricesString, isPackPriceHeader } = require("../utils/sheetPricing");
+const {
+  parsePackPricesString,
+  isPackPriceHeader,
+  parseUpcomingFromStatus
+} = require("../utils/sheetPricing");
 
 const router = express.Router();
 
+/** Standard columns — not treated as separate quantity/weight price columns */
 const STANDARD_COLS = new Set([
-  "name", "price", "category", "image", "description", "stock"
+  "name",
+  "category",
+  "image",
+  "description",
+  "status",
+  "stock",
+  "price"
 ]);
+
+const RECOMMENDED_HEADERS = ["name", "category", "image", "description", "packPrice", "status"];
 
 function headerIsStandard(h) {
   const key = (h || "").toLowerCase().trim();
@@ -16,6 +29,63 @@ function headerIsStandard(h) {
 
 function mergePriceMaps(...maps) {
   return Object.assign({}, ...maps);
+}
+
+function getRowField(row, fieldName) {
+  if (row[fieldName] != null && row[fieldName] !== "") return row[fieldName];
+  const lower = fieldName.toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (key && key.toLowerCase().trim() === lower) return row[key];
+  }
+  return undefined;
+}
+
+function buildProductFromRow(row, packPriceCol, quantityColumns) {
+  let priceByWeight = {};
+
+  const packVal = packPriceCol ? getRowField(row, packPriceCol) : getRowField(row, "packPrice");
+  if (packVal) {
+    priceByWeight = mergePriceMaps(priceByWeight, parsePackPricesString(packVal));
+  }
+
+  for (const col of quantityColumns) {
+    const val = row[col];
+    if (val != null && val !== "" && String(val).includes("|")) {
+      priceByWeight = mergePriceMaps(priceByWeight, parsePackPricesString(val));
+    } else if (val != null && val !== "" && !isNaN(Number(val))) {
+      priceByWeight[col.trim()] = Number(val);
+    }
+  }
+
+  const statusRaw = getRowField(row, "status");
+  const upcoming = parseUpcomingFromStatus(statusRaw);
+
+  const baseData = {
+    category: getRowField(row, "category"),
+    image: getRowField(row, "image"),
+    description: getRowField(row, "description"),
+    upcoming
+  };
+
+  const stockVal = getRowField(row, "stock");
+  if (stockVal != null && stockVal !== "" && !isNaN(Number(stockVal))) {
+    baseData.stock = Number(stockVal);
+  }
+
+  const priceVal = getRowField(row, "price");
+  if (priceVal != null && priceVal !== "" && !isNaN(Number(priceVal))) {
+    baseData.price = Number(priceVal);
+  } else if (Object.keys(priceByWeight).length) {
+    baseData.price = Math.min(...Object.values(priceByWeight));
+  }
+
+  Object.keys(baseData).forEach(k => {
+    if (baseData[k] === undefined || baseData[k] === "") delete baseData[k];
+  });
+
+  if (Object.keys(priceByWeight).length) baseData.priceByWeight = priceByWeight;
+
+  return baseData;
 }
 
 router.get("/sync", async (req, res) => {
@@ -42,46 +112,24 @@ router.get("/sync", async (req, res) => {
     }
 
     const allHeaders = sheet.headerValues || [];
-    const packPriceCol = allHeaders.find(h => isPackPriceHeader(h));
+    const packPriceCol =
+      allHeaders.find(h => isPackPriceHeader(h)) ||
+      allHeaders.find(h => (h || "").toLowerCase().trim() === "packprice");
     const quantityColumns = allHeaders.filter(h => !headerIsStandard(h));
 
     let synced = 0;
 
     for (const row of rows) {
-      if (!row.name) continue;
+      const name = getRowField(row, "name");
+      if (!name) continue;
 
-      let priceByWeight = {};
-
-      if (packPriceCol && row[packPriceCol]) {
-        priceByWeight = mergePriceMaps(priceByWeight, parsePackPricesString(row[packPriceCol]));
-      }
-
-      for (const col of quantityColumns) {
-        const val = row[col];
-        if (val != null && val !== "" && String(val).includes("|")) {
-          priceByWeight = mergePriceMaps(priceByWeight, parsePackPricesString(val));
-        } else if (val != null && val !== "" && !isNaN(Number(val))) {
-          priceByWeight[col.trim()] = Number(val);
-        }
-      }
-
-      const existingProduct = await Product.findOne({ name: row.name });
-
-      const baseData = {
-        price: row.price ? Number(row.price) : undefined,
-        category: row.category,
-        image: row.image,
-        description: row.description,
-        stock: row.stock ? Number(row.stock) : undefined
-      };
-      Object.keys(baseData).forEach(k => baseData[k] === undefined && delete baseData[k]);
-
-      if (Object.keys(priceByWeight).length) baseData.priceByWeight = priceByWeight;
+      const baseData = buildProductFromRow(row, packPriceCol, quantityColumns);
+      const existingProduct = await Product.findOne({ name: String(name).trim() });
 
       if (existingProduct) {
         await Product.findByIdAndUpdate(existingProduct._id, baseData);
       } else {
-        await Product.create({ name: row.name, ...baseData });
+        await Product.create({ name: String(name).trim(), ...baseData });
       }
       synced++;
     }
@@ -89,9 +137,11 @@ router.get("/sync", async (req, res) => {
     res.json({
       message: "Sheet synced successfully",
       synced,
-      packPriceColumn: packPriceCol || null,
+      recommendedHeaders: RECOMMENDED_HEADERS,
+      packPriceColumn: packPriceCol || "packPrice",
       quantityColumns,
-      formatHint: "Use column packPrices with cell format: 300g|199,1kg|549,1.5kg|799"
+      statusHint: "status: true = upcoming (future launch), false = live product",
+      formatHint: "packPrice cell: 300g|199,1kg|549,1.5kg|799"
     });
   } catch (err) {
     console.log("Sheet Sync Error:", err);
@@ -112,9 +162,18 @@ router.get("/headers", async (req, res) => {
     const sheet = doc.sheetsByIndex[0];
     await sheet.loadHeaderRow();
     const allHeaders = sheet.headerValues || [];
-    const packPriceColumn = allHeaders.find(h => isPackPriceHeader(h)) || null;
+    const packPriceColumn =
+      allHeaders.find(h => isPackPriceHeader(h)) ||
+      allHeaders.find(h => (h || "").toLowerCase().trim() === "packprice") ||
+      null;
     const quantityColumns = allHeaders.filter(h => !headerIsStandard(h));
-    res.json({ headers: allHeaders, packPriceColumn, quantityColumns });
+    res.json({
+      headers: allHeaders,
+      recommendedHeaders: RECOMMENDED_HEADERS,
+      packPriceColumn,
+      quantityColumns,
+      hasStatusColumn: allHeaders.some(h => (h || "").toLowerCase().trim() === "status")
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
